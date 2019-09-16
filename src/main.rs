@@ -30,6 +30,7 @@ struct DnsResponse {
     ad: bool,
     #[serde(rename = "CD")]
     cd: bool,
+    #[serde(default)]
     #[serde(rename = "Answer")]
     answer: Vec<DnsResponseAnswer>,
 }
@@ -40,24 +41,33 @@ fn main() {
     if args.len() > 1 {
         let domain = args[1].as_str();
 
-        let record_a = dns_query(domain, "A");
-        for answer in record_a.answer {
-            println!("{} has address {}", answer.name, answer.data);
-        }
+        let record_types = [["A", "has address"], ["AAAA", "has IPv6 address"], ["MX", "mail is handled by"]];
 
-        let record_aaaa = dns_query(domain, "AAAA");
-        for answer in record_aaaa.answer {
-            println!("{} has IPv6 address {}", answer.name, answer.data);
-        }
+        for record_type in record_types.iter() {
+            let data = match dns_query(domain, record_type[0]) {
+                Ok(data) => data,
+                Err(error) => {
+                    println!("{}", error);
+                    DnsResponse {
+                        status: 0,
+                        tc: false,
+                        rd: false,
+                        ra: false,
+                        ad: false,
+                        cd: false,
+                        answer: vec![],
+                    }
+                }
+            };
 
-        let record_mx = dns_query(domain, "MX");
-        for answer in record_mx.answer {
-            println!("{} mail is handled by {}", answer.name, answer.data);
+            for answer in data.answer {
+                println!("{} {} {}", answer.name, record_type[1], answer.data);
+            }
         }
     }
 }
 
-fn dns_query(domain: &str, record_type: &str) -> DnsResponse {
+fn dns_query(domain: &str, record_type: &str) -> Result<DnsResponse, &'static str> {
     let client = reqwest::Client::new();
     let url = ["https://cloudflare-dns.com/dns-query?name=", domain, "&type=", record_type].join("").to_string();
 
@@ -67,7 +77,7 @@ fn dns_query(domain: &str, record_type: &str) -> DnsResponse {
         .expect("Failed to send request");
 
     if let Ok(data) = response.json::<DnsResponse>() {
-        return data;
+        return Ok(data);
     }
-    return DnsResponse { status: 0, tc: false, rd: false, ra: false, ad: false, cd: false, answer: vec![] };
+    return Err("Error");
 }
